@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { getUserByEmail, mockUsers } from '@/lib/mockData'
 import { hashPassword, generateToken } from '@/lib/auth'
 import { registerSchema } from '@/lib/validations'
 
@@ -10,15 +10,8 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validatedData = registerSchema.parse(body)
     
-    // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: validatedData.email },
-          ...(validatedData.phone ? [{ phone: validatedData.phone }] : []),
-        ],
-      },
-    })
+    // Check if user already exists in mock data
+    const existingUser = getUserByEmail(validatedData.email)
     
     if (existingUser) {
       return NextResponse.json(
@@ -30,25 +23,16 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(validatedData.password)
     
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email: validatedData.email,
-        phone: validatedData.phone,
-        password: hashedPassword,
-        name: validatedData.name,
-        role: validatedData.role,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        role: true,
-        isEmailVerified: true,
-        createdAt: true,
-      },
-    })
+    // Create mock user (in demo mode, just return a fake user)
+    const user = {
+      id: `user_${Date.now()}`,
+      email: validatedData.email,
+      name: validatedData.name,
+      phone: validatedData.phone || null,
+      role: validatedData.role,
+      isEmailVerified: false,
+      createdAt: new Date(),
+    }
     
     // Generate JWT token
     const token = generateToken({

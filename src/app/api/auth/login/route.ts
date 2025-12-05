@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { getUserByEmail } from '@/lib/mockData'
 import { verifyPassword, generateToken } from '@/lib/auth'
 import { loginSchema } from '@/lib/validations'
 
@@ -10,10 +10,8 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validatedData = loginSchema.parse(body)
     
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email: validatedData.email },
-    })
+    // Find user from mock data
+    const user = getUserByEmail(validatedData.email)
     
     if (!user) {
       return NextResponse.json(

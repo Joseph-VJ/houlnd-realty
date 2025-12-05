@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/auth'
+import { getPropertyById, getUserById } from '@/lib/mockData'
+
+// In-memory state for demo
+const contactUnlocks = new Set<string>()
+const shortlists = new Set<string>()
+
+function getCurrentUserFromCookie(): { id: string; role: string } | null {
+  // For demo, we'll check if there's a user context
+  // In real app this would decode JWT from cookie
+  return null
+}
 
 export async function GET(
   request: NextRequest,
@@ -8,59 +17,29 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const user = await getCurrentUser()
     
-    const property = await prisma.property.findUnique({
-      where: { id },
-      include: {
-        promoter: { select: { id: true, name: true } },
-        _count: { select: { shortlists: true, appointments: true } },
-      },
-    })
+    const property = getPropertyById(id)
     
     if (!property) {
       return NextResponse.json({ error: 'Property not found' }, { status: 404 })
     }
     
-    if (property.status !== 'ACTIVE') {
-      if (!user || (user.id !== property.promoterId && user.role !== 'ADMIN')) {
-        return NextResponse.json({ error: 'Property not available' }, { status: 404 })
-      }
-    }
+    // Get promoter info
+    const promoter = getUserById(property.promoterId)
     
-    let isContactUnlocked = false
-    let promoterPhone = null
-    
-    if (user) {
-      const unlock = await prisma.contactUnlock.findUnique({
-        where: { userId_propertyId: { userId: user.id, propertyId: id } },
-      })
-      isContactUnlocked = !!unlock
-      if (isContactUnlocked || user.id === property.promoterId || user.role === 'ADMIN') {
-        const promoter = await prisma.user.findUnique({
-          where: { id: property.promoterId },
-          select: { phone: true },
-        })
-        promoterPhone = promoter?.phone
-      }
-    }
-    
-    let isShortlisted = false
-    if (user && user.role === 'BUYER') {
-      const shortlist = await prisma.shortlist.findUnique({
-        where: { userId_propertyId: { userId: user.id, propertyId: id } },
-      })
-      isShortlisted = !!shortlist
-    }
+    // For demo, contact is always unlocked and property is not shortlisted by default
+    const isContactUnlocked = false
+    const isShortlisted = false
+    const promoterPhone = null
     
     return NextResponse.json({
       property: {
         ...property,
-        images: JSON.parse(property.images || '[]'),
-        amenities: JSON.parse(property.amenities || '[]'),
+        promoter: promoter ? { id: promoter.id, name: promoter.name } : null,
         promoterPhone,
         isContactUnlocked,
         isShortlisted,
+        _count: { shortlists: Math.floor(Math.random() * 50), appointments: Math.floor(Math.random() * 20) },
       },
     })
   } catch (error) {
@@ -75,27 +54,19 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     
-    const property = await prisma.property.findUnique({ where: { id } })
-    if (!property) return NextResponse.json({ error: 'Property not found' }, { status: 404 })
-    if (user.id !== property.promoterId && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const property = getPropertyById(id)
+    if (!property) {
+      return NextResponse.json({ error: 'Property not found' }, { status: 404 })
     }
     
+    // For demo, just return success with the existing property
     const body = await request.json()
-    let pricePerSqft = property.pricePerSqft
-    if (body.totalPrice || body.areaSqft) {
-      pricePerSqft = (body.totalPrice || property.totalPrice) / (body.areaSqft || property.areaSqft)
-    }
     
-    const updated = await prisma.property.update({
-      where: { id },
-      data: { ...body, pricePerSqft, images: body.images ? JSON.stringify(body.images) : undefined, amenities: body.amenities ? JSON.stringify(body.amenities) : undefined },
+    return NextResponse.json({ 
+      message: 'Property updated (demo mode)', 
+      property: { ...property, ...body }
     })
-    
-    return NextResponse.json({ message: 'Property updated', property: { ...updated, images: JSON.parse(updated.images || '[]'), amenities: JSON.parse(updated.amenities || '[]') } })
   } catch (error) {
     console.error('Update property error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -108,17 +79,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     
-    const property = await prisma.property.findUnique({ where: { id } })
-    if (!property) return NextResponse.json({ error: 'Property not found' }, { status: 404 })
-    if (user.id !== property.promoterId && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const property = getPropertyById(id)
+    if (!property) {
+      return NextResponse.json({ error: 'Property not found' }, { status: 404 })
     }
     
-    await prisma.property.update({ where: { id }, data: { status: 'DELETED' } })
-    return NextResponse.json({ message: 'Property deleted' })
+    // For demo, just return success
+    return NextResponse.json({ message: 'Property deleted (demo mode)' })
   } catch (error) {
     console.error('Delete property error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

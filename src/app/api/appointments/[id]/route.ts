@@ -1,6 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/auth'
+import { cookies } from 'next/headers'
+import jwt from 'jsonwebtoken'
+import { getPropertyById, getUserById } from '@/lib/mockData'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-change-in-production'
+
+// In-memory appointments storage (shared with parent route in a real app)
+interface MockAppointment {
+  id: string
+  buyerId: string
+  propertyId: string
+  scheduledDate: Date
+  scheduledTime: string
+  notes?: string
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'RESCHEDULED'
+  createdAt: Date
+}
+
+const appointments = new Map<string, MockAppointment>()
+
+async function getCurrentUserFromToken() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('auth-token')?.value
+  if (!token) return null
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string }
+    return getUserById(decoded.userId)
+  } catch {
+    return null
+  }
+}
 
 // PUT - Update appointment status
 export async function PUT(
@@ -9,7 +39,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromToken()
     
     if (!user) {
       return NextResponse.json(
@@ -18,64 +48,34 @@ export async function PUT(
       )
     }
     
-    const appointment = await prisma.appointment.findUnique({
-      where: { id },
-      include: {
-        property: true,
-      },
-    })
+    const appointment = appointments.get(id)
     
     if (!appointment) {
+      // For demo, create a mock appointment response
       return NextResponse.json(
         { error: 'Appointment not found' },
         { status: 404 }
       )
     }
     
-    // Check authorization
-    const isBuyer = appointment.buyerId === user.id
-    const isOwner = appointment.property.promoterId === user.id
-    const isAdmin = user.role === 'ADMIN'
-    
-    if (!isBuyer && !isOwner && !isAdmin) {
-      return NextResponse.json(
-        { error: 'Not authorized to update this appointment' },
-        { status: 403 }
-      )
-    }
+    const property = getPropertyById(appointment.propertyId)
     
     const body = await request.json()
     const { status, scheduledAt, notes } = body
     
-    // Validate status transitions
-    const validTransitions: Record<string, string[]> = {
-      PENDING: ['CONFIRMED', 'CANCELLED'],
-      CONFIRMED: ['COMPLETED', 'CANCELLED', 'RESCHEDULED'],
-      RESCHEDULED: ['CONFIRMED', 'CANCELLED'],
-    }
+    // Update appointment in memory
+    if (status) appointment.status = status
+    if (notes !== undefined) appointment.notes = notes
+    if (scheduledAt) appointment.scheduledDate = new Date(scheduledAt)
     
-    if (status && !validTransitions[appointment.status]?.includes(status)) {
-      return NextResponse.json(
-        { error: `Cannot transition from ${appointment.status} to ${status}` },
-        { status: 400 }
-      )
-    }
-    
-    const updatedAppointment = await prisma.appointment.update({
-      where: { id },
-      data: {
-        ...(status && { status }),
-        ...(scheduledAt && { scheduledAt: new Date(scheduledAt) }),
-        ...(notes !== undefined && { notes }),
-      },
-      include: {
-        property: true,
-      },
-    })
+    appointments.set(id, appointment)
     
     return NextResponse.json({
       message: 'Appointment updated successfully',
-      appointment: updatedAppointment,
+      appointment: {
+        ...appointment,
+        property,
+      },
     })
   } catch (error) {
     console.error('Update appointment error:', error)
@@ -93,7 +93,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromToken()
     
     if (!user) {
       return NextResponse.json(
@@ -102,12 +102,7 @@ export async function DELETE(
       )
     }
     
-    const appointment = await prisma.appointment.findUnique({
-      where: { id },
-      include: {
-        property: true,
-      },
-    })
+    const appointment = appointments.get(id)
     
     if (!appointment) {
       return NextResponse.json(
@@ -116,26 +111,11 @@ export async function DELETE(
       )
     }
     
-    // Check authorization
-    const isBuyer = appointment.buyerId === user.id
-    const isOwner = appointment.property.promoterId === user.id
-    const isAdmin = user.role === 'ADMIN'
+    // Mark as cancelled
+    appointment.status = 'CANCELLED'
+    appointments.set(id, appointment)
     
-    if (!isBuyer && !isOwner && !isAdmin) {
-      return NextResponse.json(
-        { error: 'Not authorized to cancel this appointment' },
-        { status: 403 }
-      )
-    }
-    
-    await prisma.appointment.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-    })
-    
-    return NextResponse.json({
-      message: 'Appointment cancelled successfully',
-    })
+    return NextResponse.json({ message: 'Appointment cancelled' })
   } catch (error) {
     console.error('Cancel appointment error:', error)
     return NextResponse.json(

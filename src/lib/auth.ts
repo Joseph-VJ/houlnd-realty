@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { cookies } from 'next/headers'
-import prisma from './prisma'
+import { getUserById } from './mockData'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production'
 
@@ -45,20 +45,15 @@ export async function getCurrentUser() {
       return null
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        role: true,
-        isEmailVerified: true,
-        createdAt: true,
-      },
-    })
+    const user = getUserById(payload.userId)
+    
+    if (!user) {
+      return null
+    }
 
-    return user
+    // Return user without password
+    const { password, ...userWithoutPassword } = user
+    return userWithoutPassword
   } catch {
     return null
   }

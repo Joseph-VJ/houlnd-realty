@@ -1,12 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/auth'
+import { cookies } from 'next/headers'
+import jwt from 'jsonwebtoken'
+import { getPropertyById, getUserById, mockProperties } from '@/lib/mockData'
 import { shortlistSchema } from '@/lib/validations'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-change-in-production'
+
+// In-memory shortlist for demo (resets on server restart)
+const userShortlists = new Map<string, Set<string>>()
+
+async function getCurrentUserFromToken() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('auth-token')?.value
+  if (!token) return null
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string }
+    return getUserById(decoded.userId)
+  } catch {
+    return null
+  }
+}
 
 // GET - Get user's shortlist
 export async function GET() {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromToken()
     
     if (!user) {
       return NextResponse.json(
@@ -15,45 +34,30 @@ export async function GET() {
       )
     }
     
-    const shortlist = await prisma.shortlist.findMany({
-      where: { userId: user.id },
-      include: {
-        property: {
-          include: {
-            promoter: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    // Get user's shortlisted property IDs
+    const shortlistSet = userShortlists.get(user.id) || new Set()
     
-    // Check which properties have unlocked contacts
-    const unlockedPropertyIds = await prisma.contactUnlock.findMany({
-      where: {
+    // Build shortlist with property details
+    const shortlist = Array.from(shortlistSet).map(propertyId => {
+      const property = getPropertyById(propertyId)
+      if (!property) return null
+      
+      const promoter = getUserById(property.promoterId)
+      
+      return {
+        id: `shortlist_${user.id}_${propertyId}`,
         userId: user.id,
-        propertyId: { in: shortlist.map(s => s.propertyId) },
-      },
-      select: { propertyId: true },
-    })
+        propertyId,
+        createdAt: new Date(),
+        property: {
+          ...property,
+          promoter: promoter ? { id: promoter.id, name: promoter.name } : null,
+        },
+        isContactUnlocked: false,
+      }
+    }).filter(Boolean)
     
-    const unlockedSet = new Set(unlockedPropertyIds.map(u => u.propertyId))
-    
-    const shortlistWithUnlockStatus = shortlist.map(item => ({
-      ...item,
-      property: {
-        ...item.property,
-        images: JSON.parse(item.property.images || '[]'),
-        amenities: JSON.parse(item.property.amenities || '[]'),
-      },
-      isContactUnlocked: unlockedSet.has(item.propertyId),
-    }))
-    
-    return NextResponse.json({ shortlist: shortlistWithUnlockStatus })
+    return NextResponse.json({ shortlist })
   } catch (error) {
     console.error('Get shortlist error:', error)
     return NextResponse.json(
@@ -66,7 +70,7 @@ export async function GET() {
 // POST - Add to shortlist
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromToken()
     
     if (!user) {
       return NextResponse.json(
@@ -79,9 +83,7 @@ export async function POST(request: NextRequest) {
     const validatedData = shortlistSchema.parse(body)
     
     // Check if property exists
-    const property = await prisma.property.findUnique({
-      where: { id: validatedData.propertyId },
-    })
+    const property = getPropertyById(validatedData.propertyId)
     
     if (!property) {
       return NextResponse.json(
@@ -90,45 +92,31 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Check if already shortlisted
-    const existing = await prisma.shortlist.findUnique({
-      where: {
-        userId_propertyId: {
-          userId: user.id,
-          propertyId: validatedData.propertyId,
-        },
-      },
-    })
+    // Get or create user's shortlist
+    if (!userShortlists.has(user.id)) {
+      userShortlists.set(user.id, new Set())
+    }
     
-    if (existing) {
+    const shortlistSet = userShortlists.get(user.id)!
+    
+    if (shortlistSet.has(validatedData.propertyId)) {
       return NextResponse.json(
         { error: 'Property already in shortlist' },
         { status: 400 }
       )
     }
     
-    // Create shortlist entry
-    const shortlist = await prisma.shortlist.create({
-      data: {
-        userId: user.id,
-        propertyId: validatedData.propertyId,
-      },
-      include: {
-        property: true,
-      },
-    })
+    // Add to shortlist
+    shortlistSet.add(validatedData.propertyId)
     
     return NextResponse.json({
-      message: 'Added to shortlist',
+      message: 'Property added to shortlist',
       shortlist: {
-        ...shortlist,
-        property: {
-          ...shortlist.property,
-          images: JSON.parse(shortlist.property.images || '[]'),
-          amenities: JSON.parse(shortlist.property.amenities || '[]'),
-        },
+        id: `shortlist_${user.id}_${validatedData.propertyId}`,
+        propertyId: validatedData.propertyId,
+        property,
       },
-    }, { status: 201 })
+    })
   } catch (error) {
     console.error('Add to shortlist error:', error)
     return NextResponse.json(
@@ -141,7 +129,7 @@ export async function POST(request: NextRequest) {
 // DELETE - Remove from shortlist
 export async function DELETE(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromToken()
     
     if (!user) {
       return NextResponse.json(
@@ -160,15 +148,16 @@ export async function DELETE(request: NextRequest) {
       )
     }
     
-    // Delete shortlist entry
-    await prisma.shortlist.delete({
-      where: {
-        userId_propertyId: {
-          userId: user.id,
-          propertyId,
-        },
-      },
-    })
+    const shortlistSet = userShortlists.get(user.id)
+    
+    if (!shortlistSet || !shortlistSet.has(propertyId)) {
+      return NextResponse.json(
+        { error: 'Property not in shortlist' },
+        { status: 404 }
+      )
+    }
+    
+    shortlistSet.delete(propertyId)
     
     return NextResponse.json({ message: 'Removed from shortlist' })
   } catch (error) {
