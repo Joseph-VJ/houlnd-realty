@@ -20,15 +20,11 @@ export async function GET() {
     if (user.role === 'BUYER') {
       // Buyer sees their appointments
       appointments = await prisma.appointment.findMany({
-        where: { userId: user.id },
+        where: { buyerId: user.id },
         include: {
           property: {
             include: {
-              images: {
-                where: { isPrimary: true },
-                take: 1,
-              },
-              owner: {
+              promoter: {
                 select: {
                   id: true,
                   name: true,
@@ -37,26 +33,19 @@ export async function GET() {
             },
           },
         },
-        orderBy: { scheduledAt: 'asc' },
+        orderBy: { scheduledDate: 'asc' },
       })
     } else if (user.role === 'PROMOTER') {
       // Promoter sees appointments for their properties
       appointments = await prisma.appointment.findMany({
         where: {
           property: {
-            ownerId: user.id,
+            promoterId: user.id,
           },
         },
         include: {
-          property: {
-            include: {
-              images: {
-                where: { isPrimary: true },
-                take: 1,
-              },
-            },
-          },
-          user: {
+          property: true,
+          buyer: {
             select: {
               id: true,
               name: true,
@@ -64,14 +53,14 @@ export async function GET() {
             },
           },
         },
-        orderBy: { scheduledAt: 'asc' },
+        orderBy: { scheduledDate: 'asc' },
       })
     } else {
       // Admin sees all
       appointments = await prisma.appointment.findMany({
         include: {
           property: true,
-          user: {
+          buyer: {
             select: {
               id: true,
               name: true,
@@ -79,7 +68,7 @@ export async function GET() {
             },
           },
         },
-        orderBy: { scheduledAt: 'asc' },
+        orderBy: { scheduledDate: 'asc' },
       })
     }
     
@@ -112,7 +101,7 @@ export async function POST(request: NextRequest) {
     const property = await prisma.property.findUnique({
       where: { id: validatedData.propertyId },
       include: {
-        owner: {
+        promoter: {
           select: { id: true, name: true },
         },
       },
@@ -133,11 +122,12 @@ export async function POST(request: NextRequest) {
     }
     
     // Check for conflicting appointments
-    const scheduledAt = new Date(validatedData.scheduledAt)
+    const scheduledDate = new Date(validatedData.scheduledDate)
     const existingAppointment = await prisma.appointment.findFirst({
       where: {
         propertyId: validatedData.propertyId,
-        scheduledAt,
+        scheduledDate,
+        scheduledTime: validatedData.scheduledTime,
         status: { in: ['PENDING', 'CONFIRMED'] },
       },
     })
@@ -152,21 +142,17 @@ export async function POST(request: NextRequest) {
     // Create appointment
     const appointment = await prisma.appointment.create({
       data: {
-        userId: user.id,
+        buyerId: user.id,
         propertyId: validatedData.propertyId,
-        scheduledAt,
+        scheduledDate,
+        scheduledTime: validatedData.scheduledTime,
         notes: validatedData.notes,
-        buyerPhone: validatedData.buyerPhone,
         status: 'PENDING',
       },
       include: {
         property: {
           include: {
-            images: {
-              where: { isPrimary: true },
-              take: 1,
-            },
-            owner: {
+            promoter: {
               select: {
                 id: true,
                 name: true,

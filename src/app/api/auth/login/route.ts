@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const token = generateToken({
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: user.role as 'BUYER' | 'PROMOTER' | 'ADMIN',
     })
     
     // Create response with cookie
@@ -48,8 +48,7 @@ export async function POST(request: NextRequest) {
         name: user.name,
         phone: user.phone,
         role: user.role,
-        isVerified: user.isVerified,
-        avatar: user.avatar,
+        isEmailVerified: user.isEmailVerified,
       },
     })
     

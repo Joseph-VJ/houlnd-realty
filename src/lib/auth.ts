@@ -4,7 +4,6 @@ import { cookies } from 'next/headers'
 import prisma from './prisma'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production'
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 export interface JWTPayload {
   userId: string
@@ -21,7 +20,7 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 }
 
 export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
 }
 
 export function verifyToken(token: string): JWTPayload | null {
@@ -54,8 +53,7 @@ export async function getCurrentUser() {
         name: true,
         phone: true,
         role: true,
-        isVerified: true,
-        avatar: true,
+        isEmailVerified: true,
         createdAt: true,
       },
     })
@@ -76,7 +74,7 @@ export async function requireAuth() {
 
 export async function requireRole(allowedRoles: ('BUYER' | 'PROMOTER' | 'ADMIN')[]) {
   const user = await requireAuth()
-  if (!allowedRoles.includes(user.role)) {
+  if (!allowedRoles.includes(user.role as 'BUYER' | 'PROMOTER' | 'ADMIN')) {
     throw new Error('Forbidden')
   }
   return user

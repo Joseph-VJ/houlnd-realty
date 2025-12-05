@@ -106,9 +106,9 @@ export const shortlistSchema = z.object({
 // Appointment Schema
 export const appointmentSchema = z.object({
   propertyId: z.string(),
-  scheduledAt: z.string().datetime(),
+  scheduledDate: z.string(),
+  scheduledTime: z.string(),
   notes: z.string().optional(),
-  buyerPhone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid phone number').optional(),
 })
 
 // Contact Unlock Schema

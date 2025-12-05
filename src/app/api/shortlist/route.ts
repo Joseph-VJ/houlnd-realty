@@ -20,11 +20,7 @@ export async function GET() {
       include: {
         property: {
           include: {
-            images: {
-              where: { isPrimary: true },
-              take: 1,
-            },
-            owner: {
+            promoter: {
               select: {
                 id: true,
                 name: true,
@@ -49,6 +45,11 @@ export async function GET() {
     
     const shortlistWithUnlockStatus = shortlist.map(item => ({
       ...item,
+      property: {
+        ...item.property,
+        images: JSON.parse(item.property.images || '[]'),
+        amenities: JSON.parse(item.property.amenities || '[]'),
+      },
       isContactUnlocked: unlockedSet.has(item.propertyId),
     }))
     
@@ -111,23 +112,22 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         propertyId: validatedData.propertyId,
-        notes: validatedData.notes,
       },
       include: {
-        property: {
-          include: {
-            images: {
-              where: { isPrimary: true },
-              take: 1,
-            },
-          },
-        },
+        property: true,
       },
     })
     
     return NextResponse.json({
-      message: 'Property added to shortlist',
-      shortlist,
+      message: 'Added to shortlist',
+      shortlist: {
+        ...shortlist,
+        property: {
+          ...shortlist.property,
+          images: JSON.parse(shortlist.property.images || '[]'),
+          amenities: JSON.parse(shortlist.property.amenities || '[]'),
+        },
+      },
     }, { status: 201 })
   } catch (error) {
     console.error('Add to shortlist error:', error)
@@ -155,11 +155,12 @@ export async function DELETE(request: NextRequest) {
     
     if (!propertyId) {
       return NextResponse.json(
-        { error: 'Property ID required' },
+        { error: 'Property ID is required' },
         { status: 400 }
       )
     }
     
+    // Delete shortlist entry
     await prisma.shortlist.delete({
       where: {
         userId_propertyId: {
@@ -169,9 +170,7 @@ export async function DELETE(request: NextRequest) {
       },
     })
     
-    return NextResponse.json({
-      message: 'Property removed from shortlist',
-    })
+    return NextResponse.json({ message: 'Removed from shortlist' })
   } catch (error) {
     console.error('Remove from shortlist error:', error)
     return NextResponse.json(

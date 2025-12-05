@@ -33,8 +33,8 @@ export async function PUT(
     }
     
     // Check authorization
-    const isBuyer = appointment.userId === user.id
-    const isOwner = appointment.property.ownerId === user.id
+    const isBuyer = appointment.buyerId === user.id
+    const isOwner = appointment.property.promoterId === user.id
     const isAdmin = user.role === 'ADMIN'
     
     if (!isBuyer && !isOwner && !isAdmin) {
@@ -69,14 +69,7 @@ export async function PUT(
         ...(notes !== undefined && { notes }),
       },
       include: {
-        property: {
-          include: {
-            images: {
-              where: { isPrimary: true },
-              take: 1,
-            },
-          },
-        },
+        property: true,
       },
     })
     
@@ -124,8 +117,8 @@ export async function DELETE(
     }
     
     // Check authorization
-    const isBuyer = appointment.userId === user.id
-    const isOwner = appointment.property.ownerId === user.id
+    const isBuyer = appointment.buyerId === user.id
+    const isOwner = appointment.property.promoterId === user.id
     const isAdmin = user.role === 'ADMIN'
     
     if (!isBuyer && !isOwner && !isAdmin) {
