@@ -1,0 +1,183 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User Model
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  phone             String?   @unique
+  password          String
+  name              String
+  role              String    @default("BUYER") // BUYER, PROMOTER, ADMIN
+  isEmailVerified   Boolean   @default(false)
+  isPhoneVerified   Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  properties        Property[]
+  shortlists        Shortlist[]
+  buyerAppointments Appointment[] @relation("BuyerAppointments")
+  contactUnlocks    ContactUnlock[]
+  payments          Payment[]
+
+  @@map("users")
+}
+
+// Property Model
+model Property {
+  id                String   @id @default(cuid())
+  title             String
+  description       String
+  propertyType      String   // PLOT, APARTMENT, VILLA, COMMERCIAL, INDEPENDENT_HOUSE, FARM_LAND
+  listingType       String   @default("SALE") // SALE, RENT
+  
+  // Pricing (Main feature: Sq.ft price)
+  totalPrice        Float
+  areaSqft          Float
+  pricePerSqft      Float    // Calculated: totalPrice / areaSqft
+  
+  // Property Details
+  bedrooms          Int?
+  bathrooms         Int?
+  floorNumber       Int?
+  totalFloors       Int?
+  parkingSpaces     Int?
+  yearBuilt         Int?
+  
+  // Location
+  address           String
+  city              String
+  state             String
+  pincode           String
+  latitude          Float?
+  longitude         Float?
+  
+  // Media
+  images            String   @default("[]") // JSON array
+  videoUrl          String?
+  
+  // Amenities (stored as JSON)
+  amenities         String   @default("[]") // JSON array
+  
+  // Status
+  status            String   @default("ACTIVE") // ACTIVE, INACTIVE, SOLD, DELETED, PENDING
+  isVerified        Boolean  @default(false)
+  verificationStatus String  @default("PENDING") // PENDING, APPROVED, REJECTED
+  verificationNotes String?
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  promoterId        String
+  promoter          User     @relation(fields: [promoterId], references: [id])
+  shortlists        Shortlist[]
+  appointments      Appointment[]
+  contactUnlocks    ContactUnlock[]
+
+  @@map("properties")
+}
+
+// Shortlist Model (Buyer's saved properties)
+model Shortlist {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  
+  // Relations
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  @@unique([userId, propertyId])
+  @@map("shortlists")
+}
+
+// Appointment Model (Site visits)
+model Appointment {
+  id             String   @id @default(cuid())
+  scheduledDate  DateTime
+  scheduledTime  String
+  status         String   @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELLED, RESCHEDULED
+  notes          String?
+  buyerNotes     String?
+  promoterNotes  String?
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Relations
+  buyerId        String
+  buyer          User     @relation("BuyerAppointments", fields: [buyerId], references: [id])
+  propertyId     String
+  property       Property @relation(fields: [propertyId], references: [id])
+
+  @@map("appointments")
+}
+
+// Contact Unlock Model (Paid feature to reveal seller contact)
+model ContactUnlock {
+  id         String   @id @default(cuid())
+  unlockedAt DateTime @default(now())
+  
+  // Relations
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id])
+  paymentId  String?  @unique
+  payment    Payment? @relation(fields: [paymentId], references: [id])
+
+  @@unique([userId, propertyId])
+  @@map("contact_unlocks")
+}
+
+// Payment Model
+model Payment {
+  id                String   @id @default(cuid())
+  amount            Float
+  currency          String   @default("INR")
+  type              String   // CONTACT_UNLOCK, SUBSCRIPTION, COMMISSION
+  status            String   @default("PENDING") // PENDING, COMPLETED, FAILED, REFUNDED
+  
+  // Payment Gateway Details
+  gatewayOrderId    String?
+  gatewayPaymentId  String?
+  gatewaySignature  String?
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  contactUnlock     ContactUnlock?
+
+  @@map("payments")
+}
+
+// OTP Model for verification
+model OTP {
+  id        String   @id @default(cuid())
+  code      String
+  type      String   // EMAIL_VERIFICATION, PHONE_VERIFICATION, PASSWORD_RESET, LOGIN
+  target    String   // email or phone number
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("otps")
+}
