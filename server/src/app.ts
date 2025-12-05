@@ -14,7 +14,7 @@ import compression from 'compression';
 
 import authRoutes from './routes/auth.routes';
 import { initializeRateLimiters, getApiLimiter, ipBlockMiddleware } from './middleware/rateLimiter';
-import { healthCheck } from './config/database';
+import { supabaseHealthCheck } from './config/supabase';
 import { isRedisAvailable } from './config/redis';
 
 // Create Express app
@@ -70,7 +70,7 @@ app.use('/api', getApiLimiter());
 
 // Health check endpoint
 app.get('/health', async (req: Request, res: Response) => {
-  const dbHealthy = await healthCheck();
+  const dbHealthy = await supabaseHealthCheck();
   const redisHealthy = await isRedisAvailable();
 
   const status = dbHealthy ? 'healthy' : 'degraded';
@@ -80,7 +80,7 @@ app.get('/health', async (req: Request, res: Response) => {
     status,
     timestamp: new Date().toISOString(),
     services: {
-      database: dbHealthy ? 'up' : 'down',
+      supabase: dbHealthy ? 'up' : 'down',
       redis: redisHealthy ? 'up' : 'down'
     },
     version: process.env.npm_package_version || '1.0.0'
@@ -89,7 +89,7 @@ app.get('/health', async (req: Request, res: Response) => {
 
 // Ready check (for k8s)
 app.get('/ready', async (req: Request, res: Response) => {
-  const dbHealthy = await healthCheck();
+  const dbHealthy = await supabaseHealthCheck();
   if (dbHealthy) {
     res.status(200).json({ ready: true });
   } else {

@@ -6,7 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { AuthService, RegisterInput, LoginInput } from '../services/AuthService';
+import { AuthService, RegisterInput, LoginInput } from '../services/AuthService.supabase';
 import { authenticate, requireRole } from '../middleware/auth';
 import { getAuthLimiter, getPasswordResetLimiter } from '../middleware/rateLimiter';
 import { validatePassword, PASSWORD_REQUIREMENTS } from '../utils/password';

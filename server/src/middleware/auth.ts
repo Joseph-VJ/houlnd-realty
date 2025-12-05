@@ -8,7 +8,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { JWTService, DecodedToken } from '../utils/jwt';
 import { tokenBlacklist } from '../config/redis';
-import { AuthService, UserRole } from '../services/AuthService';
+import { AuthService, UserRole } from '../services/AuthService.supabase';
 
 // Extend Express Request type
 declare global {
